@@ -1,0 +1,14 @@
+val projectData = spark.read.format("com.databricks.spark.csv").option("header","true").option("inferSchema","true").load("./spark.csv") 
+projectData.registerTempTable("projectData") 
+
+projectData.count()
+
+projectData.where(projectData("`No.Reviews`") === projectData.agg(max("`No.Reviews`")).first()(0)).show()
+
+val longestName = spark.sql("select * from projectData where length(Restaurant) = (select max(length(Restaurant)) from projectData)");
+
+projectData.groupBy("Region").agg(sum(projectData("`No.Reviews`"))).show()
+
+val projectDataRDD = sc.textFile("./spark.csv")
+projectDataRDD.map(line => line.split(",")(4)).filter(line => !(line contains("The")) && !(line contains("of")) && !(line contains("a"))).flatMap(line => line.split(" ")).map(word=>(word,1)).reduceByKey(_+_).sortBy(T=>T._2, false).take(1)
+projectDataRDD.map(line => line.split(",")(4)).flatMap(line => line.split(" ")).filter(line => !(line contains("The")) && !(line contains("of")) && !(line contains("a"))).map(word=>(word,1)).reduceByKey(_+_).sortBy(T=>T._2, false).collect() 

@@ -1,0 +1,40 @@
+import org.apache.spark._
+import org.apache.spark.rdd.RDD
+import org.apache.spark.util.IntParam
+import org.apache.spark.graphx._
+import org.apache.spark.graphx.util.GraphGenerators
+
+case class Harbour(index:Int, route:String, from: String, to:String, trip_no:Long)
+def parseHarbour(str:String):Harbour={val line=str.split(",");Harbour(line(0).toInt, line(1), line(2), line(3), line(4).toLong)}
+var textRDD = sc.textFile("./hadoop_mirrored.csv")
+val header=textRDD.first()
+textRDD = textRDD.filter(row=>row!=header)
+val harbourRDD = textRDD.map(parseHarbour).cache()
+var portNames = harbourRDD.flatMap(port=>Seq(port.from,port.to)).distinct
+val portMap =  portNames.zipWithIndex.map{ case (port,i) => (port -> i)}.collect.toMap
+var ports = harbourRDD.flatMap(port=>Seq((portMap(port.from), port.from),(portMap(port.to),port.to))).distinct
+val routes = harbourRDD.map(port=>((portMap(port.from),portMap(port.to)),port.route)).distinct
+val edges=routes.map{case((from,to),route)=>Edge(from,to,route)}
+val HarbourMap =  portNames.zipWithIndex.map{ case (port,i) => (i -> port)}.collect.toMap
+val nowhere = "nowhere"
+val graph=Graph(ports,edges,nowhere)
+
+
+val routeMap = graph.collectEdges(EdgeDirection Out)
+val harbourRoutes = routeMap.map{case (x,y) => (HarbourMap(x),y.map(e => e.attr).distinct.size,y.map(e => e.attr).distinct.mkString(","))}
+harbourRoutes.foreach(println)
+
+
+graph.edges.filter{case (Edge(from,to,route))=>route.equals("Porium_Thirty-one")}.take(3)
+
+
+val routeMap = graph.collectEdges(EdgeDirection Out)
+val harbourRoutes = routeMap.map{case (x,y) => (HarbourMap(x),y.map(e => e.attr).distinct.size,y.map(e => e.attr).distinct.mkString(","))}
+harbourRoutes.sortBy(x => x._2,ascending=false).take(2)
+
+
+val neighbors = graph.collectNeighborIds(EdgeDirection Out)
+val harbourConnections = neighbors.map{case (x,y) => (HarbourMap(x),y.distinct.size,y.map(e => HarbourMap(e)).distinct.mkString(","))}
+harbourConnections.sortBy(x => x._2,ascending=false).take(2)
+
+val connectedComponents = graph.connectedComponents.vertices.map(_.swap).groupByKey
